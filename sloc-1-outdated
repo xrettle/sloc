@@ -1,0 +1,97 @@
+@echo off
+setlocal
+title Code Speed Counter
+color 0b
+
+:: -----------------------------------------------------------------------------
+::  SLOC V1
+:: -----------------------------------------------------------------------------
+
+:ask_dir
+cls
+echo.
+echo  =======================================================
+echo   SLOC v1 (outdated, no not use)
+echo  =======================================================
+echo.
+set /p "target_dir=Enter directory path to scan: "
+
+:: Remove quotes if user added them
+set "target_dir=%target_dir:"=%"
+
+if not exist "%target_dir%" (
+    echo.
+    echo [ERROR] Directory not found.
+    timeout /t 2 >nul
+    goto :ask_dir
+)
+
+echo.
+echo  [SYSTEM] Initializing scan engine...
+echo  [STATUS] Scanning "%target_dir%" recursively...
+echo.
+
+:: Generate Temp PowerShell Script
+set "ps_script=%temp%\fast_count.ps1"
+(
+echo $path = "%target_dir%"
+echo $sw = [System.Diagnostics.Stopwatch]::StartNew^(\^)
+echo.
+echo # Optimized list of code/text extensions to scan for LOC
+echo $exts = @^('.c','.cpp','.h','.hpp','.cs','.css','.html','.htm','.js','.json','.jsx','.ts','.tsx','.java','.kt','.py','.rb','.pl','.php','.sh','.bat','.cmd','.ps1','.vbs','.xml','.yaml','.yml','.sql','.md','.txt','.ini','.conf','.go','.rs','.swift','.lua','.r','.dart'^)
+echo.
+echo try {
+echo     $files = [System.IO.Directory]::EnumerateFiles^($path, "*.*", [System.IO.SearchOption]::AllDirectories^)
+echo } catch {
+echo     Write-Host "Error accessing directory: $_" -ForegroundColor Red
+echo     exit
+echo }
+echo.
+echo $totalFiles = 0
+echo $codeFiles = 0
+echo $totalLines = 0
+echo $totalChars = 0
+echo.
+echo foreach ^($f in $files^) {
+echo     $totalFiles++
+echo     $ext = [System.IO.Path]::GetExtension^($f^).ToLower^(^)
+echo     if ^($exts -contains $ext^) {
+echo         try {
+echo             # ReadAllText is faster than Get-Content for counting
+echo             $content = [System.IO.File]::ReadAllText^($f^)
+echo             $totalChars += $content.Length
+echo             # Count newlines efficiently
+echo             $lines = 0
+echo             if ^($content.Length -gt 0^) {
+echo                 $lines = $content.Split^("`n"^).Length
+echo             }
+echo             $totalLines += $lines
+echo             $codeFiles++
+echo         } catch {
+echo             # Skip locked/unreadable files quietly for speed
+echo         }
+echo     }
+echo }
+echo.
+echo $sw.Stop^(\^)
+echo.
+echo "  ======================================================="
+echo "   RESULTS"
+echo "  ======================================================="
+echo "   Total Files Scanned : " + $totalFiles.ToString^("N0"^)
+echo "   Code/Text Files     : " + $codeFiles.ToString^("N0"^)
+echo "   Lines of Code       : " + $totalLines.ToString^("N0"^)
+echo "   Characters          : " + $totalChars.ToString^("N0"^)
+echo "  -------------------------------------------------------"
+echo "   Time Taken          : " + $sw.Elapsed.TotalSeconds.ToString^("N3"^) + " seconds"
+echo "  ======================================================="
+) > "%ps_script%"
+
+:: Execute and Clean up
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ps_script%"
+del "%ps_script%"
+
+echo.
+echo  Done.
+pause >nul
+goto :ask_dir
