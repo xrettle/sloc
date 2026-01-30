@@ -1,0 +1,133 @@
+@echo off
+setlocal EnableDelayedExpansion
+title Sloc v3
+color 0b
+
+:: -----------------------------------------------------------------------------
+::  SLOC v3
+:: -----------------------------------------------------------------------------
+
+:ask_dir
+cls
+echo.
+echo  =======================================================
+echo   SLOC v3
+echo  =======================================================
+echo.
+set "target_dir="
+set /p "target_dir=Enter directory path to scan: "
+
+:: 1. Validation: Check if empty
+if not defined target_dir goto :ask_dir
+
+:: 2. Sanitization: Remove double quotes
+set "target_dir=!target_dir:"=!"
+
+:: 3. Sanitization: Remove trailing backslash
+::    (Prevents "C:\Path\" becoming "C:\Path"" in PowerShell args)
+if "!target_dir:~-1!"=="\" set "target_dir=!target_dir:~0,-1!"
+
+:: 4. Validation: Check existence
+if not exist "!target_dir!" (
+    echo.
+    echo [ERROR] Directory not found: "!target_dir!"
+    timeout /t 2 >nul
+    goto :ask_dir
+)
+
+echo.
+echo  [SYSTEM] Initializing scan engine...
+echo  [STATUS] Scanning "!target_dir!"...
+echo.
+
+:: -----------------------------------------------------------------------------
+::  GENERATE POWERSHELL WORKER
+::  Method: Line-by-line append (>>) to prevent Batch block-parsing errors.
+:: -----------------------------------------------------------------------------
+set "ps_script=%temp%\fast_count_v3.ps1"
+if exist "%ps_script%" del /f /q "%ps_script%"
+
+:: Header & Setup
+echo param([string]$targetPath) >> "%ps_script%"
+echo $sw = [System.Diagnostics.Stopwatch]::StartNew() >> "%ps_script%"
+echo Write-Host "  ...Indexing files..." -ForegroundColor DarkGray >> "%ps_script%"
+echo. >> "%ps_script%"
+
+:: Extension List (Optimized)
+echo $exts = @( >> "%ps_script%"
+echo   '.c','.cpp','.h','.hpp','.cc','.cp','.cxx', >> "%ps_script%"
+echo   '.cs','.css','.scss','.less','.sass','.styl', >> "%ps_script%"
+echo   '.html','.htm','.xhtml','.vue','.svelte', >> "%ps_script%"
+echo   '.js','.json','.jsx','.ts','.tsx','.mjs','.cjs', >> "%ps_script%"
+echo   '.java','.kt','.kts','.groovy','.scala', >> "%ps_script%"
+echo   '.py','.pyw','.rb','.pl','.php','.php4','.php5', >> "%ps_script%"
+echo   '.sh','.bash','.zsh','.bat','.cmd','.ps1','.vbs', >> "%ps_script%"
+echo   '.xml','.yaml','.yml','.toml','.ini','.conf','.cfg', >> "%ps_script%"
+echo   '.sql','.md','.txt','.rtf','.log','.csv', >> "%ps_script%"
+echo   '.go','.rs','.swift','.lua','.r','.dart','.elm' >> "%ps_script%"
+echo ) >> "%ps_script%"
+
+:: Main Logic
+echo try { >> "%ps_script%"
+echo     $files = [System.IO.Directory]::EnumerateFiles($targetPath, "*.*", [System.IO.SearchOption]::AllDirectories) >> "%ps_script%"
+echo } catch { >> "%ps_script%"
+echo     Write-Host "  [Error] Access denied or path invalid." -ForegroundColor Red >> "%ps_script%"
+echo     exit >> "%ps_script%"
+echo } >> "%ps_script%"
+echo. >> "%ps_script%"
+echo $totalFiles = 0 >> "%ps_script%"
+echo $codeFiles = 0 >> "%ps_script%"
+echo $totalLines = 0 >> "%ps_script%"
+echo $totalChars = 0 >> "%ps_script%"
+echo $skippedLarge = 0 >> "%ps_script%"
+echo. >> "%ps_script%"
+echo foreach ($f in $files) { >> "%ps_script%"
+echo     $totalFiles++ >> "%ps_script%"
+echo     $ext = [System.IO.Path]::GetExtension($f).ToLower() >> "%ps_script%"
+echo     if ($exts -contains $ext) { >> "%ps_script%"
+echo         try { >> "%ps_script%"
+echo             $info = New-Object System.IO.FileInfo($f) >> "%ps_script%"
+::               SAFETY CHECK: Skip files > 100MB to avoid RAM exhaustion
+echo             if ($info.Length -gt 104857600) { >> "%ps_script%"
+echo                 $skippedLarge++ >> "%ps_script%"
+echo                 continue >> "%ps_script%"
+echo             } >> "%ps_script%"
+echo             $content = [System.IO.File]::ReadAllText($f) >> "%ps_script%"
+echo             $totalChars += $content.Length >> "%ps_script%"
+echo             if ($content.Length -gt 0) { >> "%ps_script%"
+::               Efficient line counting: TotalLen - LenWithoutNewlines + 1
+echo                 $totalLines += ($content.Length - $content.Replace("`n", "").Length) + 1 >> "%ps_script%"
+echo             } >> "%ps_script%"
+echo             $codeFiles++ >> "%ps_script%"
+echo         } catch { } >> "%ps_script%"
+echo     } >> "%ps_script%"
+echo } >> "%ps_script%"
+echo. >> "%ps_script%"
+echo $sw.Stop() >> "%ps_script%"
+
+:: Output Formatting
+echo Write-Host " =======================================================" -ForegroundColor Cyan >> "%ps_script%"
+echo Write-Host "  RESULTS" -ForegroundColor Cyan >> "%ps_script%"
+echo Write-Host " =======================================================" -ForegroundColor Cyan >> "%ps_script%"
+echo Write-Host "  Total Files Scanned : $(($totalFiles).ToString('N0'))" >> "%ps_script%"
+echo Write-Host "  Code/Text Files     : $(($codeFiles).ToString('N0'))" >> "%ps_script%"
+echo Write-Host "  Lines of Code       : $(($totalLines).ToString('N0'))" -ForegroundColor Green >> "%ps_script%"
+echo Write-Host "  Characters          : $(($totalChars).ToString('N0'))" >> "%ps_script%"
+echo Write-Host " -------------------------------------------------------" -ForegroundColor DarkGray >> "%ps_script%"
+echo if ($skippedLarge -gt 0) { >> "%ps_script%"
+echo     Write-Host "  Skipped Large Files : $skippedLarge (>100MB)" -ForegroundColor Yellow >> "%ps_script%"
+echo } >> "%ps_script%"
+echo Write-Host "  Time Taken          : $(($sw.Elapsed.TotalSeconds).ToString('N3')) seconds" -ForegroundColor Yellow >> "%ps_script%"
+echo Write-Host " =======================================================" -ForegroundColor Cyan >> "%ps_script%"
+
+:: -----------------------------------------------------------------------------
+::  EXECUTE
+:: -----------------------------------------------------------------------------
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ps_script%" "!target_dir!"
+
+:: Cleanup
+del "%ps_script%"
+
+echo.
+pause
+goto :ask_dir
