@@ -18,7 +18,7 @@ It also includes safety measures for production environments. It automatically s
 
 You do not need to install anything or set up a runtime environment.
 
-1. Download the sloc.bat file from this repository.
+1. Download the SLOC-4-Latest.bat file from this repository.
 2. Run the file by double-clicking it or calling it from a terminal.
 3. Paste the path of the folder you want to analyze.
 4. Review the results once the progress bar reaches 100 percent.
